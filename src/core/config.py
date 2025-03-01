@@ -9,8 +9,8 @@ class Config:
 
         self._tuning_seed = 75
         self._cv_seed = 31
-        self._target_column = ''
-        self._group_column = '' # group無の場合はNoneを指定
+        self._target_column = 'median_house_value'
+        self._group_column = None # group無の場合はNoneを指定
         self._strata_column = ''
         self._exclude_columns = []
 

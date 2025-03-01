@@ -11,7 +11,7 @@ if __name__ == '__main__':
     config = Config()
 
     # lightGBMによる学習・予測
-    run_name = f'lgb_{config.target_dataset}_{config.target_column}_{datetime.datetime.now().strftime("%Y%m%d%H%M")}'
+    run_name = f'lgb_{datetime.datetime.now().strftime("%Y%m%d%H%M")}'
 
     # モデルディレクトリの作成
     model_dir = f'../model/{run_name}'
@@ -35,8 +35,8 @@ if __name__ == '__main__':
         ,cv_seed = config.cv_seed
         ,tuning_seed = config.tuning_seed
         ,model_dir = model_dir
-        ,is_tuning = True
-        ,train_file_path = f"../data/raw/{config.target_dataset}_{config.target_column}.parquet"
+        ,is_tuning = False
+        ,train_file_path = f"../data/raw/housing.csv"
         ,test_file_path = ""
     )
     outer_runner.run_train_cv()

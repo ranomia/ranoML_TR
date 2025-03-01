@@ -102,7 +102,7 @@ class OuterCVRunner:
 
         if is_validation:
             # 学習データ・バリデーションデータをセットする
-            tr_idx, va_idx = self.load_index_fold_inner(i_fold)
+            tr_idx, va_idx = self.load_index_fold(i_fold)
             
             # インデックスの保存
             index_saver = IndexSaver(self.model_dir, self.run_name)
@@ -615,49 +615,41 @@ class OuterCVRunner:
         x_test.columns = x_test.columns.str.replace('"', '').str.replace("'", "").str.replace('-', '_').str.replace(' ', '').str.replace(',', '_').str.replace('.', '')
 
         return x_test
-
-    def load_index_fold(self, i_fold: int) -> np.array:
-        """
-        クロスバリデーションでのfoldを指定して対応するレコードのインデックスを返す
-
-        :param i_fold: foldの番号
-        :return: foldに対応するレコードのインデックス
-        """
-        train_x = self.load_x_train()
-        train_y = self.load_y_train()
-
-        if config.group_column == '':
-            kfold = StratifiedKFold(n_splits=self.n_fold, shuffle=True, random_state=self.cv_seed)
-            idx_thisfold = list(kfold.split(train_x, train_y))[i_fold]
-        else:
-            kfold = StratifiedShuffledGroupKFold(n_splits=self.n_fold, shuffle=True, random_state=self.cv_seed)
-            tr_idx, va_idx = list(kfold.split(
-                X=train_x.drop(columns=[config.strata_column, config.group_column]), 
-                y=train_x[config.strata_column].values, 
-                groups=train_x[config.group_column].values
-            ))[i_fold]
-        return idx_thisfold
     
-    def load_index_fold_inner(self, i_fold: int) -> Tuple[np.array, np.array, np.array]:
+    def load_index_fold(self, i_fold: int) -> Tuple[np.array, np.array]:
         """
         クロスバリデーションでのfoldを指定して対応するレコードのインデックスを返す
 
         :param i_fold: foldの番号
-        :return: fold_iにおけるtrain, tuning, validationのインデックスのタプル
+        :return: fold_iにおけるtrain, validationのインデックスのタプル
         """
         train_x = self.load_x_train()
         train_y = self.load_y_train()
 
         if config.group_column is None:
+            if config.strata_column is not None:
+                # 層化に使用する列が指定されている場合
+                strata = train_x[config.strata_column]
+            else:
+                # 目標変数を4分位数でビン分割して層化に使用
+                strata = pd.qcut(train_y, q=4, labels=False)
+            
             # tr+tuとvaの分割
             kfold = StratifiedKFold(n_splits=self.n_fold, shuffle=True, random_state=self.cv_seed)
-            tr_idx, va_idx = list(kfold.split(train_x, train_y))[i_fold]
+            tr_idx, va_idx = list(kfold.split(train_x, strata))[i_fold]
         else:
+            if config.strata_column is not None:
+                # 層化に使用する列が指定されている場合
+                strata = train_x[config.strata_column]
+            else:
+                # 目標変数を4分位数でビン分割して層化に使用
+                strata = pd.qcut(train_y, q=4, labels=False)
+
             # tr+tuとvaの分割
             kfold = StratifiedShuffledGroupKFold(n_splits=self.n_fold, shuffle=True, random_state=self.cv_seed)
             tr_idx, va_idx = list(kfold.split(
-                X=train_x.drop(columns=[config.strata_column, config.group_column]), 
-                y=train_x[config.strata_column].values, 
+                X=train_x,
+                y=strata,
                 groups=train_x[config.group_column].values
             ))[i_fold]
 
