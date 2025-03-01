@@ -11,7 +11,7 @@ class Config:
         self._cv_seed = 31
         self._target_column = 'median_house_value'
         self._group_column = None # group無の場合はNoneを指定
-        self._strata_column = ''
+        self._strata_column = None # 層化無の場合はNoneを指定
         self._exclude_columns = []
 
     @staticmethod
