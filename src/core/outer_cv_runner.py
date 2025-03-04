@@ -50,18 +50,18 @@ class OuterCVRunner:
     def _to_int(x):
         return x.astype(int)
 
-    def __init__(self, run_name: str, model_cls: None, params_dict: None, cv_seed: int, tuning_seed: int, model_dir: str, is_tuning: bool, train_file_path: str, test_file_path: str):
+    def __init__(self, run_name: str, model_type: str, params_dict: None, cv_seed: int, tuning_seed: int, model_dir: str, is_tuning: bool, train_file_path: str, test_file_path: str):
         """
         コンストラクタ
 
         :param run_name: ランの名前
-        :param model_cls: モデルのクラス
+        :param model_type: モデルのアーキテクチャ
         :param params: ハイパーパラメータ
         :param n_fold: fold数
         :param dtype_dict: データ型の定義（trainに合わせてtestをロード）
         """
         self.run_name = run_name
-        self.model_cls = model_cls
+        self.model_type = model_type
         self.params_dict = params_dict
         self.n_fold = 5
         self.dtype_dict = {}
@@ -119,12 +119,14 @@ class OuterCVRunner:
             if self.is_tuning:
                 if config.group_column is None:
                     inner_runner = InnerCVRunner(
+                        model_type=self.model_type,
                         tuning_seed=self.tuning_seed,
                         model_builder=self.build_model  # build_modelメソッドを渡す
                     )
                     tuned_params_dict_flatten = inner_runner.parameter_tuning(tr_x, tr_y, None, n_trials=100)
                 else:
                     inner_runner = InnerCVRunner(
+                        model_type=self.model_type,
                         tuning_seed=self.tuning_seed,
                         model_builder=self.build_model  # build_modelメソッドを渡す
                     )
@@ -146,7 +148,7 @@ class OuterCVRunner:
             with open(f"{self.model_dir}/models/parameters/params_dict_{self.run_name}_fold{i_fold}.json", "w") as f:
                 json.dump(self.params_dict, f)
 
-            model_pipe = self.build_model(is_pipeline=True, params_dict=self.params_dict)
+            model_pipe = self.build_model(params_dict=self.params_dict)
 
             ### pipelineで完結したいが、eval_setを使う場合は別で適用する必要がありそう。将来的に改善したい。
             # 前処理部分のみを先にfit
@@ -156,13 +158,20 @@ class OuterCVRunner:
             
             # モデルをクローンし、変換済みデータで学習
             model = clone(model_pipe.named_steps['model'])
-            model.fit(
-                tr_x_transformed, tr_y,
-                eval_set=[(tr_x_transformed, tr_y), (va_x_transformed, va_y)],
-                eval_names=['train', 'valid'],
-                eval_metric='rmse',
-                callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)]
-            )
+            if isinstance(model, LGBMRegressor):
+                model.fit(
+                    tr_x_transformed, tr_y,
+                    eval_set=[(tr_x_transformed, tr_y), (va_x_transformed, va_y)],
+                    eval_names=['train', 'valid'],
+                    eval_metric='rmse',
+                    callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)]
+                )
+            elif isinstance(model, XGBRegressor):
+                model.fit(
+                    tr_x_transformed, tr_y,
+                    eval_set=[(tr_x_transformed, tr_y), (va_x_transformed, va_y)],
+                    verbose=False
+                )
 
             # 学習済みの前処理とモデルでパイプラインを再構築
             fitted_pipeline = Pipeline([
@@ -178,7 +187,7 @@ class OuterCVRunner:
             with open(f'{self.model_dir}/models/pipelines/pipeline_{self.run_name}_fold{i_fold}.pkl', 'wb') as f:
                 pickle.dump(fitted_pipeline, f)
             
-            evaluator = ModelEvaluator(self.model_dir, self.run_name) # dataを適切に渡せば、プロットできるものが増える
+            evaluator = ModelEvaluator(self.model_type, self.model_dir, self.run_name) # dataを適切に渡せば、プロットできるものが増える
             
             # 評価指標の計算
             tr_metrics = evaluator.evaluate_metrics(tr_y, tr_y_pred)
@@ -228,7 +237,7 @@ class OuterCVRunner:
             return fitted_pipeline, cv_results
         else:
             # 学習データ全てで学習を行う
-            model_pipe = self.build_model(is_pipeline=False, i_fold=i_fold, params=self.params)
+            model_pipe = self.build_model(i_fold=i_fold, params=self.params)
             model_pipe.train_model(train_x, train_y)
 
             # モデルを返す
@@ -386,95 +395,93 @@ class OuterCVRunner:
 
         logger.info(f'{self.run_name} - end prediction all')
 
-    def build_model(self, is_pipeline: bool, params_dict: dict):
+    def build_model(self, params_dict: dict):
         """
         クロスバリデーションでのfoldを指定して、モデルの作成を行う
 
-        :param is_pipeline: パイプラインを使用するかどうか
         :param params_dict: チューニングされたパラメータ
         :return: モデルのインスタンス
         """
         # ラン名、fold、モデルのクラスからモデルを作成する
-        if is_pipeline:
-            lgb_model = LGBMRegressor(
-                 **params_dict['lightgbm']
+        if self.model_type == 'lightgbm':
+            model = LGBMRegressor(
+                **params_dict['lightgbm']
                 ,random_state = self.cv_seed
                 ,verbose = -1
                 ,n_estimators = 5000
                 ,num_threads = 4
             )
-
-            # cat_model = CatBoostRegressor(
-            #     **params_dict['catboost'],
-            #     random_seed=self.cv_seed,
-            #     verbose=False,
-            #     thread_count=4
-            # )
-
-            # カラムの型に応じて異なる変換を適用するColumnTransformer
-            numeric_features = self.selector.get_feature_names_out(feature_types=['int64', 'float64'])
-            zero_impute_features = []
-            mean_impute_features = [col for col in numeric_features if col not in zero_impute_features]
-
-            categorical_features = self.selector.get_feature_names_out(feature_types=['category', 'object'])
-            target_encoding_features = []
-            non_target_encoding_features = [col for col in categorical_features if col not in target_encoding_features]
-            
-            boolean_features = self.selector.get_feature_names_out(feature_types=['bool'])
-
-            # ColumnTransformer の出力を pandas の DataFrame に固定するため set_output を使用
-            column_transformer = ColumnTransformer(
-                transformers=[
-                    ('num_mean', Pipeline([
-                        ('imputer', SimpleImputer(strategy='mean'))
-                    ]), mean_impute_features),
-                    ('num_zero', Pipeline([
-                        ('imputer', SimpleImputer(strategy='constant', fill_value=0))
-                    ]), zero_impute_features),
-                    ('cat_target_encoding', Pipeline([
-                        ('to_string', FunctionTransformer(self._to_string, feature_names_out='one-to-one')),
-                        ('imputer', SimpleImputer(strategy='constant', fill_value='missing'))
-                    ]), target_encoding_features),
-                    ('cat_non_target_encoding', Pipeline([
-                        ('to_string', FunctionTransformer(self._to_string, feature_names_out='one-to-one')),
-                        ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
-                        ('encoder', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1))
-                    ]), non_target_encoding_features),
-                    ('bool', Pipeline([
-                        ('to_float', FunctionTransformer(self._to_float, feature_names_out='one-to-one')),
-                        ('imputer', SimpleImputer(strategy='constant', fill_value=0)),
-                        ('to_int', FunctionTransformer(self._to_int, feature_names_out='one-to-one'))
-                    ]), boolean_features)
-                ],
-                remainder='passthrough',
-                verbose_feature_names_out=False
-            ).set_output(transform="pandas")  # ここで出力を DataFrame に固定
-
-            preprocessor = Pipeline([
-                ('column_transformer', column_transformer),
-                ('data_error_corrector', DataErrorCorrector()),
-                ('custom_target_encoder', CustomTargetEncoder(
-                     encoding_columns=target_encoding_features
-                    ,smoothing=10
-                    ,min_samples_leaf=5
-                ))
-            ])
-
-            pipeline = Pipeline([
-                ('preprocessor', preprocessor),
-                ('model', clone(lgb_model))
-            ])
-            return pipeline
-        else:
-            lgb_model = LGBMRegressor(
-                 **params_dict['lightgbm']
+        elif self.model_type == 'xgboost':
+            model = XGBRegressor(
+                **params_dict['xgboost']
+                ,eval_metric = 'rmse'
+                ,early_stopping_rounds = 50
                 ,random_state = self.cv_seed
-                ,verbose = -1
-                ,n_estimators = 5000
-                ,num_threads = 4
+                ,verbosity = 0
+                ,n_jobs = 4
+            )
+        elif self.model_type == 'catboost':
+            model = CatBoostRegressor(
+                **params_dict['catboost']
+                ,random_seed = self.cv_seed
+                ,verbose = False
+                ,thread_count = 4
             )
 
-            return lgb_model
+        # カラムの型に応じて異なる変換を適用するColumnTransformer
+        numeric_features = self.selector.get_feature_names_out(feature_types=['int64', 'float64'])
+        zero_impute_features = []
+        mean_impute_features = [col for col in numeric_features if col not in zero_impute_features]
+
+        categorical_features = self.selector.get_feature_names_out(feature_types=['category', 'object'])
+        target_encoding_features = []
+        non_target_encoding_features = [col for col in categorical_features if col not in target_encoding_features]
+        
+        boolean_features = self.selector.get_feature_names_out(feature_types=['bool'])
+
+        # ColumnTransformer の出力を pandas の DataFrame に固定するため set_output を使用
+        column_transformer = ColumnTransformer(
+            transformers=[
+                ('num_mean', Pipeline([
+                    ('imputer', SimpleImputer(strategy='mean'))
+                ]), mean_impute_features),
+                ('num_zero', Pipeline([
+                    ('imputer', SimpleImputer(strategy='constant', fill_value=0))
+                ]), zero_impute_features),
+                ('cat_target_encoding', Pipeline([
+                    ('to_string', FunctionTransformer(self._to_string, feature_names_out='one-to-one')),
+                    ('imputer', SimpleImputer(strategy='constant', fill_value='missing'))
+                ]), target_encoding_features),
+                ('cat_non_target_encoding', Pipeline([
+                    ('to_string', FunctionTransformer(self._to_string, feature_names_out='one-to-one')),
+                    ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
+                    ('encoder', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1))
+                ]), non_target_encoding_features),
+                ('bool', Pipeline([
+                    ('to_float', FunctionTransformer(self._to_float, feature_names_out='one-to-one')),
+                    ('imputer', SimpleImputer(strategy='constant', fill_value=0)),
+                    ('to_int', FunctionTransformer(self._to_int, feature_names_out='one-to-one'))
+                ]), boolean_features)
+            ],
+            remainder='passthrough',
+            verbose_feature_names_out=False
+        ).set_output(transform="pandas")  # ここで出力を DataFrame に固定
+
+        preprocessor = Pipeline([
+            ('column_transformer', column_transformer),
+            ('data_error_corrector', DataErrorCorrector()),
+            ('custom_target_encoder', CustomTargetEncoder(
+                    encoding_columns=target_encoding_features
+                ,smoothing=10
+                ,min_samples_leaf=5
+            ))
+        ])
+
+        pipeline = Pipeline([
+            ('preprocessor', preprocessor),
+            ('model', clone(model))
+        ])
+        return pipeline
     
     def load_x_train(self) -> pd.DataFrame:
         """

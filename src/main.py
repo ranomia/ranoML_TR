@@ -18,8 +18,8 @@ if __name__ == '__main__':
     os.makedirs(model_dir, exist_ok=True)
 
     outer_runner = OuterCVRunner(
-            run_name = run_name
-        ,model_cls = None
+         run_name = run_name
+        ,model_type = 'xgboost'
         ,params_dict = {
             'lightgbm': {
                 'learning_rate': 0.01,
@@ -30,12 +30,26 @@ if __name__ == '__main__':
                 'reg_alpha': 1.0,
                 'min_data_in_leaf': 50,
             },
+            'xgboost': {
+                # 'n_estimators': 1000,
+                # 'learning_rate': 0.1,
+                # 'min_child_weight': 5,
+                # 'max_depth': 6,
+                # 'max_delta_step': 10,
+                # 'subsample': 0.7,
+                # 'colsample_bytree': 0.7,
+                # 'colsample_bylevel': 0.7,
+                # 'reg_lambda': 0.01,
+                # 'reg_alpha': 0.01,
+                # 'gamma': 0.1,
+                # 'scale_pos_weight': 1.0,
+            },
             'catboost': {}
         }
         ,cv_seed = config.cv_seed
         ,tuning_seed = config.tuning_seed
         ,model_dir = model_dir
-        ,is_tuning = False
+        ,is_tuning = True
         ,train_file_path = f"../data/raw/housing.csv"
         ,test_file_path = ""
     )

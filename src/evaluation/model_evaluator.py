@@ -10,13 +10,14 @@ from core.config import Config
 class ModelEvaluator:
     """モデルの評価と可視化を行うクラス"""
     
-    def __init__(self, output_dir: str, run_name: str, data: pd.DataFrame = None):
+    def __init__(self, model_type: str, output_dir: str, run_name: str, data: pd.DataFrame = None):
         """
         Args:
             output_dir (str): 出力ディレクトリのパス
             run_name (str): 実験名
             data (pd.DataFrame): カテゴリ情報を含むデータフレーム
         """
+        self.model_type = model_type
         self.output_dir = output_dir
         self.run_name = run_name
         self.data = data
@@ -41,7 +42,6 @@ class ModelEvaluator:
         self,
         eval_results: Dict[str, Dict[str, List[float]]],
         fold: int,
-        y_limit: tuple = (0, 0.2),
         save_path: str = None
     ) -> None:
         """学習曲線をプロット
@@ -53,13 +53,21 @@ class ModelEvaluator:
             save_path: 保存先のパス（デフォルト: None）
         """
         fig = plt.figure(figsize=(10, 6))
-        plt.plot(eval_results['train']['rmse'], label='Training Loss')
-        plt.plot(eval_results['valid']['rmse'], label='Validation Loss')
+
+        if self.model_type == 'lightgbm':
+            plt.plot(eval_results['train']['rmse'], label='Training Loss')
+            plt.plot(eval_results['valid']['rmse'], label='Validation Loss')
+        elif self.model_type == 'xgboost':
+            plt.plot(eval_results['validation_0']['rmse'], label='Training Loss')
+            plt.plot(eval_results['validation_1']['rmse'], label='Validation Loss')
+        elif self.model_type == 'catboost':
+            plt.plot(eval_results['learn']['rmse'], label='Training Loss')
+            plt.plot(eval_results['validatation']['rmse'], label='Validation Loss')
         plt.xlabel('Iteration')
         plt.ylabel('RMSE')
         plt.title('Learning Curve')
-        plt.ylim(y_limit)
         plt.legend()
+        plt.ylim(bottom=0)
         
         if save_path:
             plt.savefig(save_path)
