@@ -61,8 +61,8 @@ class ModelEvaluator:
             plt.plot(eval_results['validation_0']['rmse'], label='Training Loss')
             plt.plot(eval_results['validation_1']['rmse'], label='Validation Loss')
         elif self.model_type == 'catboost':
-            plt.plot(eval_results['learn']['rmse'], label='Training Loss')
-            plt.plot(eval_results['validatation']['rmse'], label='Validation Loss')
+            plt.plot(eval_results['learn']['RMSE'], label='Training Loss')
+            plt.plot(eval_results['validation_0']['RMSE'], label='Validation Loss')
         plt.xlabel('Iteration')
         plt.ylabel('RMSE')
         plt.title('Learning Curve')

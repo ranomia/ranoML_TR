@@ -172,6 +172,14 @@ class OuterCVRunner:
                     eval_set=[(tr_x_transformed, tr_y), (va_x_transformed, va_y)],
                     verbose=False
                 )
+            elif isinstance(model, CatBoostRegressor):
+                model.fit(
+                    tr_x_transformed, tr_y,
+                    eval_set=[(tr_x_transformed, tr_y), (va_x_transformed, va_y)],
+                    early_stopping_rounds=50,
+                    verbose=False,
+                    use_best_model=True
+                )
 
             # 学習済みの前処理とモデルでパイプラインを再構築
             fitted_pipeline = Pipeline([

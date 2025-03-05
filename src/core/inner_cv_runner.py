@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
@@ -25,6 +26,8 @@ from util.util import ShuffledGroupKFold
 
 config = Config()
 
+warnings.filterwarnings('ignore', message='.*CatBoostPruningCallback is experimental*')
+
 class InnerCVRunner:
     def __init__(self, model_type: str, tuning_seed: int, model_builder: callable) -> None:
         self.n_repeats = 1
@@ -37,7 +40,7 @@ class InnerCVRunner:
     def objective(self, trial, tr_x: pd.DataFrame, tr_y: pd.Series, va_x: pd.DataFrame, va_y: pd.Series) -> float:
         if self.model_type == 'lightgbm':
             params_range = {
-                'learning_rate': trial.suggest_float('lightgbm_learning_rate', 0.001, 0.1, log=True),
+                'learning_rate': trial.suggest_float('lightgbm_learning_rate', 0.01, 1.0, log=True),
                 'feature_fraction': trial.suggest_float('lightgbm_feature_fraction', 0.4, 0.9),
                 'num_leaves': trial.suggest_int('lightgbm_num_leaves', 16, 128),
                 'subsample': trial.suggest_float('lightgbm_subsample', 0.4, 0.9),
@@ -116,16 +119,44 @@ class InnerCVRunner:
 
         elif self.model_type == 'catboost':
             params_range = {
+                'depth': trial.suggest_int('catboost_depth', 1, 8),
                 'learning_rate': trial.suggest_float('catboost_learning_rate', 0.001, 0.01, log=True),
-                'depth': trial.suggest_int('catboost_depth', 3, 5),
-                'iterations': trial.suggest_int('catboost_iterations', 100, 150),
-                'l2_leaf_reg': trial.suggest_float('catboost_l2_leaf_reg', 10, 20),
-                'random_seed': self.tuning_seed,
-                'verbose': 0
-                # 'task_type': 'GPU'
+                'random_strength': trial.suggest_float('catboost_random_strength', 1e-6, 10, log=True),
+                'bagging_temperature': trial.suggest_float('catboost_bagging_temperature', 0.0, 1.0),
+                'border_count': trial.suggest_int('catboost_border_count', 1, 255),
+                'l2_leaf_reg': trial.suggest_int('catboost_l2_leaf_reg', 2, 30)
             }
-            model = CatBoostRegressor(**params_range)
-            model.fit(tr_x, tr_y)
+
+            # OuterCVRunnerのbuild_modelを使用
+            model_pipe = self.model_builder(params_dict={'catboost': params_range})
+
+            # 前処理部分のみを先にfit
+            preprocessor = model_pipe.named_steps['preprocessor']
+            preprocessor.fit(tr_x, tr_y)
+
+            # 前処理を適用
+            tr_x_transformed = preprocessor.transform(tr_x)
+            va_x_transformed = preprocessor.transform(va_x)
+
+            model = model_pipe.named_steps['model']
+
+            pruning_callback = optuna.integration.CatBoostPruningCallback(
+                trial,
+                'RMSE'
+            )
+
+            model.fit(
+                tr_x_transformed,
+                tr_y,
+                eval_set=[(va_x_transformed, va_y)],
+                early_stopping_rounds=50,
+                verbose=False,
+                use_best_model=True,
+                callbacks=[pruning_callback]
+            )
+
+            pruning_callback.check_pruned()
+
         else:
             raise ValueError(f"Unsupported model type: {self.model_type}")
 

@@ -19,7 +19,7 @@ if __name__ == '__main__':
 
     outer_runner = OuterCVRunner(
          run_name = run_name
-        ,model_type = 'xgboost'
+        ,model_type = 'catboost'
         ,params_dict = {
             'lightgbm': {
                 'learning_rate': 0.01,
@@ -31,20 +31,27 @@ if __name__ == '__main__':
                 'min_data_in_leaf': 50,
             },
             'xgboost': {
-                # 'n_estimators': 1000,
-                # 'learning_rate': 0.1,
-                # 'min_child_weight': 5,
-                # 'max_depth': 6,
-                # 'max_delta_step': 10,
-                # 'subsample': 0.7,
-                # 'colsample_bytree': 0.7,
-                # 'colsample_bylevel': 0.7,
-                # 'reg_lambda': 0.01,
-                # 'reg_alpha': 0.01,
-                # 'gamma': 0.1,
-                # 'scale_pos_weight': 1.0,
+                'n_estimators': 1000,
+                'learning_rate': 0.1,
+                'min_child_weight': 5,
+                'max_depth': 6,
+                'max_delta_step': 10,
+                'subsample': 0.7,
+                'colsample_bytree': 0.7,
+                'colsample_bylevel': 0.7,
+                'reg_lambda': 0.01,
+                'reg_alpha': 0.01,
+                'gamma': 0.1,
+                'scale_pos_weight': 1.0,
             },
-            'catboost': {}
+            'catboost': {
+                'depth': 4,
+                'learning_rate': 0.005,
+                'random_strength': 1,
+                'bagging_temperature': 0.5,
+                'border_count': 128,
+                'l2_leaf_reg': 10
+            }
         }
         ,cv_seed = config.cv_seed
         ,tuning_seed = config.tuning_seed
