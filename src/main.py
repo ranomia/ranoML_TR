@@ -19,7 +19,7 @@ if __name__ == '__main__':
 
     outer_runner = OuterCVRunner(
          run_name = run_name
-        ,model_type = 'catboost'
+        ,model_type = 'lightgbm'
         ,params_dict = {
             'lightgbm': {
                 'learning_rate': 0.01,

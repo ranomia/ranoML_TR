@@ -417,7 +417,7 @@ class OuterCVRunner:
                 ,random_state = self.cv_seed
                 ,verbose = -1
                 ,n_estimators = 5000
-                ,num_threads = 4
+                ,num_threads = -1
             )
         elif self.model_type == 'xgboost':
             model = XGBRegressor(
@@ -426,14 +426,14 @@ class OuterCVRunner:
                 ,early_stopping_rounds = 50
                 ,random_state = self.cv_seed
                 ,verbosity = 0
-                ,n_jobs = 4
+                ,n_jobs = -1
             )
         elif self.model_type == 'catboost':
             model = CatBoostRegressor(
                 **params_dict['catboost']
                 ,random_seed = self.cv_seed
                 ,verbose = False
-                ,thread_count = 4
+                ,thread_count = -1
             )
 
         # カラムの型に応じて異なる変換を適用するColumnTransformer
